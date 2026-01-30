@@ -1,0 +1,99 @@
+# hana — Hands Are Not APIs
+# Configuration Example
+# Copy this file to hana.yaml and adjust values as needed.
+
+# Execution settings
+execution:
+  mode: upsert                    # create | update | upsert
+  image_policy: replace           # append | replace | ignore
+  dry_run: false                  # true to simulate without changes
+  parallel_skus: 1                # number of parallel SKU processing
+
+# Schema version handling
+schema:
+  supported_versions: ["1.0"]
+  unknown_version_policy: fail    # fail | warn
+
+# Slug handling
+slug:
+  null_policy: from_title         # from_title | from_sku | error
+  collision_policy: suffix        # fail | suffix | sku
+
+# Taxonomy settings
+taxonomy:
+  missing_term_policy: fallback   # fallback | error
+  fallback: pendente              # fallback term slug
+
+# Media settings
+media:
+  dedup_strategy: checksum_meta   # checksum_meta | filename | local_ledger
+  checksum_algorithm: sha256
+  featured_policy: first_gallery  # error | first_gallery | allow_null
+  orphan_policy: detach           # detach | delete
+  media_ledger_path: .hana/media_ledger.json
+
+# Lock settings
+lock:
+  strategy: filesystem            # filesystem | advisory
+  timeout_seconds: 300
+  cleanup_orphans: true
+
+# Rate limiting
+rate_limit:
+  requests_per_second: 5
+  burst: 10
+
+# Retry policy (transport errors only)
+retry:
+  max_attempts: 3
+  initial_delay_ms: 500
+  max_delay_ms: 10000
+
+# Backpressure detection
+backpressure:
+  strategy: pause                 # pause | skip | abort
+  trigger: consecutive_errors     # consecutive_errors | error_rate | response_time
+  threshold: 5
+  cooldown_seconds: 30
+
+# Graceful degradation
+degradation:
+  media_failure: skip_media       # skip_media | fail_sku | retry_later
+  taxonomy_failure: use_fallback  # use_fallback | fail_sku
+
+# Update field handling
+update:
+  null_policy: ignore             # ignore | clear | error
+  missing_policy: ignore          # ignore | error
+
+# Failure handling
+failure_policy:
+  post_then_media: mark_incomplete  # rollback | mark_incomplete | allow_partial
+
+# Ordering
+ordering:
+  strategy: sku_asc               # sku_asc | filesystem | manifest_order
+
+# Signal handling
+signals:
+  graceful_shutdown: true
+  checkpoint_on_sigterm: true
+
+# Logging
+logging:
+  level: info                     # debug | info | warn | error
+
+# Ledger
+ledger:
+  path: .hana/ledger.jsonl
+  corruption_policy: fail         # fail | rebuild | ignore_corrupt_lines
+
+# WordPress connection
+wp:
+  base_url: https://your-site.com
+  user: ingest
+  app_password: xxxx xxxx xxxx xxxx xxxx xxxx
+
+# Paths
+paths:
+  catalog_root: /path/to/catalog

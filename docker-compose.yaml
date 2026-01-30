@@ -1,0 +1,138 @@
+# hana — Development Environment
+# Includes WordPress + MariaDB for local testing
+
+services:
+  # =============================================================================
+  # hana — Ingestion Engine
+  # =============================================================================
+  hana:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hana-engine
+    volumes:
+      # Mount source for development
+      - ./hana:/app/hana:ro
+      # Mount catalog data
+      - ./data/catalog:/data/catalog:ro
+      # Mount config
+      - ./hana.yaml:/app/hana.yaml:ro
+      # Persist ledger data
+      - hana-ledger:/app/.hana
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    networks:
+      - hana-network
+    # Override entrypoint for development
+    entrypoint: ["hana", "run", "-c", "/app/hana.yaml"]
+
+  # =============================================================================
+  # WordPress — Target CMS
+  # =============================================================================
+  wordpress:
+    image: wordpress:6.4-php8.2-apache
+    container_name: hana-wordpress
+    ports:
+      - "8080:80"
+    volumes:
+      - wordpress-data:/var/www/html
+      - ./docker/wordpress/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+    environment:
+      WORDPRESS_DB_HOST: mariadb
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DEBUG: "1"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - hana-network
+
+  # =============================================================================
+  # MariaDB — Database
+  # =============================================================================
+  mariadb:
+    image: mariadb:11
+    container_name: hana-mariadb
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - hana-network
+
+  # =============================================================================
+  # hana-test — Test runner
+  # =============================================================================
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: hana-test
+    volumes:
+      - ./hana:/app/hana
+      - ./tests:/app/tests
+      - ./pyproject.toml:/app/pyproject.toml
+    entrypoint: ["python", "-m", "pytest", "tests/", "-v"]
+    networks:
+      - hana-network
+    profiles:
+      - test
+
+  # =============================================================================
+  # WP-CLI — WordPress CLI for setup
+  # =============================================================================
+  wpcli:
+    image: wordpress:cli-2.9-php8.2
+    container_name: hana-wpcli
+    volumes:
+      - wordpress-data:/var/www/html
+      - ./docker/wordpress/setup.sh:/setup.sh:ro
+    environment:
+      WORDPRESS_DB_HOST: mariadb
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    user: "33:33"
+    entrypoint: ["/bin/sh", "/setup.sh"]
+    networks:
+      - hana-network
+    profiles:
+      - setup
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  hana-network:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  wordpress-data:
+  mariadb-data:
+  hana-ledger:
