@@ -1,4 +1,4 @@
-# hana — Hands Are Not APIs
+# Hana — Catalog Ingestion Engine
 # Configuration Example
 # Copy this file to hana.yaml and adjust values as needed.
 
@@ -22,7 +22,7 @@ slug:
 # Taxonomy settings
 taxonomy:
   missing_term_policy: fallback   # fallback | error
-  fallback: pendente              # fallback term slug
+  fallback: uncategorized         # fallback term slug
 
 # Media settings
 media:
@@ -91,9 +91,9 @@ ledger:
 # WordPress connection
 wp:
   base_url: https://your-site.com
-  user: ingest
+  user: your-username
   app_password: xxxx xxxx xxxx xxxx xxxx xxxx
 
 # Paths
 paths:
-  catalog_root: /path/to/catalog
+  catalog_root: ./data/catalog

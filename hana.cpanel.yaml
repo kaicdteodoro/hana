@@ -1,0 +1,90 @@
+# Hana — Configuration for WordPress hosted on cPanel
+#
+# For external WordPress installations (cPanel, shared hosting, etc.)
+# Copy to hana.yaml and configure your credentials.
+#
+# REQUIREMENTS:
+# 1. hana-cpt.php in wp-content/mu-plugins/
+# 2. Application Password created (Users → Profile → Application Passwords)
+
+execution:
+  mode: upsert
+  image_policy: replace
+  dry_run: false
+  parallel_skus: 1                # Keep low for shared hosting
+
+schema:
+  supported_versions: ["1.0"]
+  unknown_version_policy: fail
+
+slug:
+  null_policy: from_title
+  collision_policy: suffix
+
+taxonomy:
+  missing_term_policy: fallback
+  fallback: uncategorized
+
+media:
+  dedup_strategy: checksum_meta
+  checksum_algorithm: sha256
+  featured_policy: first_gallery
+  orphan_policy: detach
+  media_ledger_path: .hana/media_ledger.json
+
+lock:
+  strategy: filesystem
+  timeout_seconds: 300
+  cleanup_orphans: true
+
+# Rate limiting — Conservative for shared hosting
+rate_limit:
+  requests_per_second: 2
+  burst: 5
+
+# Retry policy — More attempts for unreliable connections
+retry:
+  max_attempts: 5
+  initial_delay_ms: 1000
+  max_delay_ms: 30000
+
+# Backpressure — Lower threshold for shared hosting
+backpressure:
+  strategy: pause
+  trigger: consecutive_errors
+  threshold: 3
+  cooldown_seconds: 60
+
+degradation:
+  media_failure: skip_media
+  taxonomy_failure: use_fallback
+
+update:
+  null_policy: ignore
+  missing_policy: ignore
+
+failure_policy:
+  post_then_media: mark_incomplete
+
+ordering:
+  strategy: sku_asc
+
+signals:
+  graceful_shutdown: true
+  checkpoint_on_sigterm: true
+
+logging:
+  level: info
+
+ledger:
+  path: .hana/ledger.jsonl
+  corruption_policy: fail
+
+# WordPress connection — CONFIGURE THESE
+wp:
+  base_url: https://your-site.com
+  user: your-username
+  app_password: xxxx xxxx xxxx xxxx xxxx xxxx
+
+paths:
+  catalog_root: ./data/catalog

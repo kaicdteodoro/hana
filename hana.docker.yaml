@@ -17,7 +17,7 @@ slug:
 
 taxonomy:
   missing_term_policy: fallback
-  fallback: pendente
+  fallback: uncategorized
 
 media:
   dedup_strategy: checksum_meta

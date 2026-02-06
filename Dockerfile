@@ -18,7 +18,7 @@ RUN useradd --create-home --shell /bin/bash hana
 WORKDIR /app
 
 # Copy project files
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 COPY hana/ ./hana/
 
 # Install Python dependencies

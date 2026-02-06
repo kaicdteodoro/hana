@@ -1,10 +1,10 @@
 #!/bin/sh
-# WordPress setup script for hana development environment
+# WordPress setup script for Hana development environment
 # Run with: docker compose --profile setup up wpcli
 
 set -e
 
-echo "=== hana WordPress Setup ==="
+echo "=== Hana WordPress Setup ==="
 echo ""
 
 # Wait for WordPress files
@@ -20,7 +20,7 @@ else
     echo "Installing WordPress..."
     wp core install \
         --url="http://localhost:8080" \
-        --title="hana Development" \
+        --title="Hana Development" \
         --admin_user="admin" \
         --admin_password="admin" \
         --admin_email="admin@example.com" \
@@ -60,54 +60,31 @@ else
 fi
 
 echo ""
-echo "=== Registering Custom Post Type ==="
+echo "=== Installing Hana Plugin ==="
 
-# Create must-use plugin for custom post type
+# Create must-use plugin directory
 mkdir -p /var/www/html/wp-content/mu-plugins
 
-cat > /var/www/html/wp-content/mu-plugins/hana-cpt.php << 'PLUGIN'
-<?php
-/**
- * Plugin Name: hana Custom Post Type
- * Description: Registers the 'produtos' post type for hana ingestion
- */
-
-add_action('init', function() {
-    register_post_type('produtos', [
-        'label' => 'Produtos',
-        'public' => true,
-        'show_in_rest' => true,
-        'rest_base' => 'produtos',
-        'supports' => ['title', 'editor', 'thumbnail', 'custom-fields'],
-        'has_archive' => true,
-        'rewrite' => ['slug' => 'produtos'],
-    ]);
-
-    register_taxonomy('categoria-produto', 'produtos', [
-        'label' => 'Categorias de Produto',
-        'public' => true,
-        'show_in_rest' => true,
-        'rest_base' => 'categoria-produto',
-        'hierarchical' => true,
-        'rewrite' => ['slug' => 'categoria-produto'],
-    ]);
-});
-
-// Expose ACF fields in REST API
-add_filter('acf/rest_api/resource_settings', function($settings) {
-    $settings['produtos'] = ['show' => true];
-    return $settings;
-}, 10, 1);
-PLUGIN
-
-echo "Custom post type 'produtos' registered"
+# Copy the complete plugin from the project
+if [ -f /app/wordpress/hana-cpt.php ]; then
+    cp /app/wordpress/hana-cpt.php /var/www/html/wp-content/mu-plugins/hana-cpt.php
+    echo "Installed hana-cpt.php from project"
+else
+    echo "WARNING: hana-cpt.php not found at /app/wordpress/"
+    echo "You may need to install it manually"
+fi
 
 echo ""
-echo "=== Creating Default Taxonomy Terms ==="
+echo "=== Installing ACF Plugin ==="
 
-# Create fallback term
-wp term create categoria-produto "Pendente" --slug="pendente" 2>/dev/null || echo "Term 'pendente' already exists"
-wp term create categoria-produto "Geral" --slug="geral" 2>/dev/null || echo "Term 'geral' already exists"
+# Check if ACF is installed
+if wp plugin is-installed advanced-custom-fields 2>/dev/null; then
+    echo "ACF already installed"
+    wp plugin activate advanced-custom-fields 2>/dev/null || true
+else
+    echo "Installing ACF..."
+    wp plugin install advanced-custom-fields --activate 2>/dev/null || echo "ACF installation failed (install manually or use ACF PRO)"
+fi
 
 echo ""
 echo "=== Setup Complete ==="
@@ -116,7 +93,7 @@ echo "WordPress is ready at: http://localhost:8080"
 echo "Admin login: admin / admin"
 echo ""
 echo "REST API endpoints:"
-echo "  - http://localhost:8080/wp-json/wp/v2/produtos"
+echo "  - http://localhost:8080/wp-json/wp/v2/catalog-items"
 echo "  - http://localhost:8080/wp-json/wp/v2/media"
-echo "  - http://localhost:8080/wp-json/wp/v2/categoria-produto"
+echo "  - http://localhost:8080/wp-json/wp/v2/item-category"
 echo ""

@@ -150,7 +150,7 @@ class SlugConfig:
 @dataclass
 class TaxonomyConfig:
     missing_term_policy: MissingTermPolicy = MissingTermPolicy.FALLBACK
-    fallback: str = "pendente"
+    fallback: str = "uncategorized"
 
 
 @dataclass
@@ -294,7 +294,7 @@ class HanaConfig:
                 missing_term_policy=MissingTermPolicy(
                     d.get("missing_term_policy", "fallback")
                 ),
-                fallback=d.get("fallback", "pendente"),
+                fallback=d.get("fallback", "uncategorized"),
             )
 
         def parse_media(d: dict) -> MediaConfig:

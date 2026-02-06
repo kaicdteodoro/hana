@@ -123,8 +123,19 @@ class IngestionEngine:
 
         for sku, manifest_path in sku_dirs:
             try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
+                with open(manifest_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
+
+                # Handle array format (manifest files contain a list with one item)
+                if isinstance(data, list):
+                    if not data:
+                        self._logger.warn(
+                            "Empty manifest array",
+                            sku=sku,
+                            stage="discovery",
+                        )
+                        continue
+                    data = data[0]
 
                 manifest = ProductManifest.from_dict(data)
 
@@ -193,24 +204,27 @@ class IngestionEngine:
         text = re.sub(r"[-\s]+", "-", text).strip("-")
         return text
 
-    def _build_acf_payload(self, manifest: ProductManifest) -> dict[str, Any]:
-        """Build ACF fields payload."""
-        acf = {
-            "codigo_sku": manifest.sku,
+    def _build_meta_payload(self, manifest: ProductManifest) -> dict[str, Any]:
+        """Build meta fields payload for WordPress REST API."""
+        import json
+
+        meta = {
+            "sku": manifest.sku,
         }
 
         if manifest.attributes.get("available_colors"):
-            acf["cores_disponiveis"] = [
-                {"cor": color} for color in manifest.attributes["available_colors"]
-            ]
+            # Store as JSON string
+            meta["available_colors"] = json.dumps(manifest.attributes["available_colors"])
+        else:
+            meta["available_colors"] = "[]"
 
         if manifest.descriptions.short is not None:
-            acf["descricao_curta"] = manifest.descriptions.short
+            meta["short_description"] = manifest.descriptions.short
 
         if manifest.descriptions.technical is not None:
-            acf["descricao_tecnica"] = manifest.descriptions.technical
+            meta["technical_description"] = manifest.descriptions.technical
 
-        return acf
+        return meta
 
     def _process_sku(self, manifest: ProductManifest) -> SKUResult:
         """Process a single SKU."""
@@ -300,7 +314,7 @@ class IngestionEngine:
             timings.taxonomy_ms = int((time.monotonic() - taxonomy_start) * 1000)
 
             slug = self._resolve_slug(manifest, existing_post)
-            acf_fields = self._build_acf_payload(manifest)
+            meta_fields = self._build_meta_payload(manifest)
 
             media_start = time.monotonic()
             featured_id: int | None = None
@@ -341,7 +355,8 @@ class IngestionEngine:
             timings.media_ms = int((time.monotonic() - media_start) * 1000)
 
             if gallery_ids:
-                acf_fields["imagens"] = gallery_ids
+                import json
+                meta_fields["gallery"] = json.dumps(gallery_ids)
 
             post_start = time.monotonic()
 
@@ -371,7 +386,7 @@ class IngestionEngine:
                     title=manifest.product.title,
                     slug=slug,
                     status=manifest.product.status.value,
-                    acf_fields=acf_fields,
+                    meta_fields=meta_fields,
                     taxonomy_terms=taxonomy_terms,
                     featured_media=featured_id,
                 )
@@ -382,7 +397,7 @@ class IngestionEngine:
                     title=manifest.product.title,
                     slug=slug,
                     status=manifest.product.status.value,
-                    acf_fields=acf_fields,
+                    meta_fields=meta_fields,
                     taxonomy_terms=taxonomy_terms,
                 )
 

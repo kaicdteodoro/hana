@@ -1,98 +1,140 @@
-# hana — Development Notes
+# Hana — Development Notes
 
-## Status Atual
-- [x] Implementação core completa
-- [x] Testes passando (37/37)
-- [x] Docker environment configurado
-- [ ] Testes de integração com WordPress real
-- [ ] ACF plugin integration (campo repeater/gallery)
-
-## Próximos Passos
-
-### Prioridade Alta
-1. **Testar com WordPress real**
-   - Subir ambiente: `make up && make setup`
-   - Configurar `hana.yaml` com app_password gerado
-   - Testar: `make health` → `make dry-run` → `make run`
-
-2. **ACF Integration**
-   - O setup.sh cria CPT mas não instala ACF
-   - Campos ACF precisam ser criados manualmente ou via código
-   - Verificar payload correto para repeater (`cores_disponiveis`) e gallery (`imagens`)
-
-3. **Validar dedup de mídia**
-   - Testar `checksum_meta` strategy com uploads reais
-   - Confirmar que meta query funciona no endpoint `/wp-json/wp/v2/media`
-
-### Prioridade Média
-4. **Retry logic**
-   - Implementar retry com backoff no `wordpress.py`
-   - Atualmente só detecta `TransportError.retryable`, não re-executa
-
-5. **Parallel execution**
-   - `parallel_skus > 1` usa ThreadPoolExecutor
-   - Testar se locking funciona corretamente em paralelo
-   - Verificar ordenação determinística do output
-
-6. **Ledger rebuild**
-   - `corruption_policy: rebuild` declarado mas não implementado
-   - Requer query de todos os SKUs do WordPress
-
-### Prioridade Baixa
-7. **CLI improvements**
-   - `hana status` — mostrar estado do ledger
-   - `hana retry-incomplete` — reprocessar SKUs incompletos
-   - `hana compact-ledger` — compactar ledger
-
-8. **Observability**
-   - Métricas (requests/s, errors, latency)
-   - Prometheus endpoint opcional
-
-## Decisões de Design
-
-### Por que não WooCommerce?
-O sistema usa CPT `produtos` customizado, não `product` do WooCommerce.
-Se precisar WooCommerce, alterar:
-- `PRODUTOS_ENDPOINT` → `/wp-json/wc/v3/products`
-- Autenticação → OAuth ou Consumer Key/Secret
-- Payload → formato WooCommerce
-
-### Por que filesystem lock?
-- Simples e funciona em single-node
-- Advisory lock (fcntl) é alternativa para multi-process
-- Para multi-node, precisaria Redis/DB lock
-
-### Por que não async/aiohttp?
-- `requests` é síncrono mas suficiente para o caso de uso
-- Rate limiting já serializa requests
-- Complexidade adicional não justificada
-
-## Configurações Importantes
+## Current Structure (v2.0)
 
 ### WordPress
-- Permalinks DEVEM estar em "Post name" (não "Plain")
-- REST API deve estar habilitada
-- Application Passwords requer HTTPS em produção (ou filtro para permitir HTTP)
+- **CPT:** `catalog-items` (REST: `/wp-json/wp/v2/catalog-items`)
+- **Taxonomy:** `item-category` (REST: `/wp-json/wp/v2/item-category`)
+- **Default terms:** `uncategorized`, `pending`
 
-### ACF
-- Versão PRO necessária para campos repeater/gallery via REST
-- Ou usar ACF to REST API plugin
+### ACF Fields
+| Field | Key | Type |
+|-------|-----|------|
+| SKU | `sku` | text |
+| Short Description | `short_description` | textarea |
+| Technical Description | `technical_description` | wysiwyg |
+| Available Colors | `available_colors` | repeater → `color` |
+| Gallery | `gallery` | gallery |
 
-## Arquivos Chave
-```
-hana/engine.py      # Lógica principal — começar aqui para entender o fluxo
-hana/wordpress.py   # Cliente REST — ajustar endpoints aqui
-hana/config.py      # Todas as opções — referência completa
-```
+### Required WordPress Plugins
+1. **ACF PRO** — Custom fields
+2. **hana-cpt.php** — CPT, taxonomy, REST config (mu-plugin)
 
-## Comandos Úteis
+---
+
+## Setup: External WordPress (cPanel)
+
+### 1. Install Plugin
+Upload `wordpress/hana-cpt.php` to `wp-content/mu-plugins/`
+
+### 2. Ensure ACF PRO is Active
+Plugins → ACF PRO → Activate
+
+### 3. Create Application Password
+Users → Profile → Application Passwords → Name: `hana` → Create
+
+### 4. Configure Hana
 ```bash
-make up              # Subir WordPress + MariaDB
-make setup           # Configurar WordPress (CPT, taxonomy, app password)
-make health          # Testar conexão
-make dry-run         # Simular ingestão
-make run             # Executar ingestão
-make test            # Rodar testes
-make logs            # Ver logs dos containers
-make clean           # Limpar tudo
+cp hana.cpanel.yaml hana.yaml
+# Edit wp.base_url, wp.user, wp.app_password
 ```
+
+### 5. Test
+```bash
+python -m hana health
+python -m hana run --dry-run
+python -m hana run
+```
+
+---
+
+## Setup: Local Docker
+
+```bash
+# Start environment
+docker compose up -d wordpress mariadb
+
+# Wait for WordPress to be ready, then run setup
+docker compose --profile setup up wpcli
+
+# Copy the app password from output, update hana.docker.yaml
+
+# Test
+docker compose run --rm hana hana health -c /app/hana.docker.yaml
+docker compose run --rm hana hana run -c /app/hana.docker.yaml --dry-run
+```
+
+---
+
+## Manifest Format
+
+```json
+{
+  "sku": "ITEM-001",
+  "meta": {
+    "schema_version": "1.0",
+    "source": "optional",
+    "generated_at": "2024-01-01T00:00:00Z"
+  },
+  "product": {
+    "title": "Product Name",
+    "slug": "product-name",
+    "status": "draft"
+  },
+  "taxonomy": {
+    "item-category": ["category-slug"]
+  },
+  "descriptions": {
+    "short": "Brief description",
+    "technical": "<p>HTML content</p>"
+  },
+  "attributes": {
+    "available_colors": ["Red", "Blue"]
+  },
+  "media": {
+    "featured": "path/to/image.jpg",
+    "gallery": [
+      {"file": "path/to/img.jpg", "checksum": "sha256..."}
+    ]
+  }
+}
+```
+
+---
+
+## Key Files
+
+```
+hana/
+├── engine.py        # Main ingestion logic
+├── wordpress.py     # REST API client
+├── retry.py         # Retry with exponential backoff
+├── config.py        # All configuration options
+└── models.py        # Data models
+
+wordpress/
+└── hana-cpt.php     # WordPress plugin (copy to mu-plugins)
+
+data/catalog/
+└── {SKU}/
+    └── manifest.json
+```
+
+---
+
+## Implemented Features
+
+- [x] Full ingestion pipeline
+- [x] Retry with exponential backoff
+- [x] Rate limiting
+- [x] Idempotent execution (hash-based skip)
+- [x] Media deduplication
+- [x] Graceful shutdown
+- [x] Structured JSON logging
+- [x] Dry-run mode
+
+## TODO
+
+- [ ] Integration tests with real WordPress
+- [ ] Ledger rebuild from WordPress
+- [ ] CLI commands: status, retry-incomplete

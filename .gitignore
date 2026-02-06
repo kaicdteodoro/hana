@@ -58,7 +58,8 @@ hana.yml
 docker-compose.override.yml
 
 # Catalog data (large files, managed separately)
-data/catalog/*/images/
+data/catalog/*
+!data/catalog/DEMO-001/
 
 # OS
 .DS_Store

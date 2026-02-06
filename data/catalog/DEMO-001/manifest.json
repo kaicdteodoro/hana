@@ -1,27 +1,32 @@
-{
-  "sku": "DEMO-001",
-  "meta": {
-    "schema_version": "1.0",
-    "source": "manual",
-    "generated_at": "2024-01-01T00:00:00Z"
-  },
-  "product": {
-    "title": "Produto Demonstração",
-    "slug": "produto-demonstracao",
-    "status": "draft"
-  },
-  "taxonomy": {
-    "categoria-produto": ["geral"]
-  },
-  "descriptions": {
-    "short": "Este é um produto de demonstração para testes do hana.",
-    "technical": "<p>Especificações técnicas do produto de demonstração.</p><ul><li>Item 1</li><li>Item 2</li></ul>"
-  },
-  "attributes": {
-    "available_colors": ["Vermelho", "Azul", "Verde"]
-  },
-  "media": {
-    "featured": null,
-    "gallery": []
+[
+  {
+    "sku": "DEMO-001",
+    "product": {
+      "title": "Demo Product",
+      "slug": "demo-product",
+      "status": "draft",
+      "type": "catalog-items"
+    },
+    "taxonomy": {
+      "item-category": [
+        "uncategorized"
+      ]
+    },
+    "descriptions": {
+      "short": "This is a demo product for testing the ingestion engine.",
+      "technical": "<p><strong>Demo Product</strong></p><ul><li>Used for testing</li><li>Not a real product</li></ul>"
+    },
+    "attributes": {
+      "available_colors": ["#FF0000", "#00FF00", "#0000FF"],
+      "materials": ["demo"]
+    },
+    "media": {
+      "featured": null,
+      "gallery": []
+    },
+    "meta": {
+      "source": "demo",
+      "generated_at": "2025-01-01T00:00:00.000Z"
+    }
   }
-}
+]

@@ -26,8 +26,8 @@ services:
         condition: service_healthy
     networks:
       - hana-network
-    # Override entrypoint for development
-    entrypoint: ["hana", "run", "-c", "/app/hana.yaml"]
+    # Use Dockerfile entrypoint, pass command via docker-compose run
+    command: ["run", "-c", "/app/hana.yaml"]
 
   # =============================================================================
   # WordPress — Target CMS
@@ -107,6 +107,7 @@ services:
     volumes:
       - wordpress-data:/var/www/html
       - ./docker/wordpress/setup.sh:/setup.sh:ro
+      - ./wordpress:/app/wordpress:ro
     environment:
       WORDPRESS_DB_HOST: mariadb
       WORDPRESS_DB_USER: wordpress

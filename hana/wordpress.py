@@ -23,14 +23,15 @@ from hana.errors import (
     TransportError,
 )
 from hana.logger import get_logger
+from hana.retry import RetryHandler
 
 
 class WordPressClient:
     """REST API client for WordPress."""
 
-    PRODUTOS_ENDPOINT = "/wp-json/wp/v2/produtos"
+    CATALOG_ENDPOINT = "/wp-json/wp/v2/catalog-items"
     MEDIA_ENDPOINT = "/wp-json/wp/v2/media"
-    TAXONOMY_ENDPOINT = "/wp-json/wp/v2/categoria-produto"
+    TAXONOMY_ENDPOINT = "/wp-json/wp/v2/item-category"
 
     def __init__(self, config: HanaConfig):
         self._config = config
@@ -39,25 +40,24 @@ class WordPressClient:
         self._session = requests.Session()
         self._session.auth = self._auth
         self._logger = get_logger()
+        self._retry = RetryHandler(config.retry)
 
     def _url(self, endpoint: str) -> str:
         """Build full URL for an endpoint."""
         return urljoin(self._base_url, endpoint)
 
-    def _request(
+    def _request_once(
         self,
         method: str,
-        endpoint: str,
-        sku: str = "",
-        stage: str = "request",
+        url: str,
+        sku: str,
+        stage: str,
         **kwargs: Any,
     ) -> requests.Response:
-        """Make an HTTP request with error handling."""
-        url = self._url(endpoint)
-
+        """Make a single HTTP request with error handling (no retry)."""
         try:
             response = self._session.request(method, url, timeout=30, **kwargs)
-        except requests.exceptions.Timeout as e:
+        except requests.exceptions.Timeout:
             raise TransportError(
                 sku=sku,
                 stage=stage,
@@ -65,7 +65,7 @@ class WordPressClient:
                 payload={"url": url, "method": method},
                 retryable=True,
             )
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError:
             raise TransportError(
                 sku=sku,
                 stage=stage,
@@ -80,6 +80,28 @@ class WordPressClient:
                 message=f"Request error: {e}",
                 payload={"url": url, "method": method},
                 retryable=False,
+            )
+
+        # 5xx errors are retryable (server-side issues)
+        if 500 <= response.status_code < 600:
+            raise TransportError(
+                sku=sku,
+                stage=stage,
+                message=f"Server error: {response.status_code}",
+                http_status=response.status_code,
+                payload={"url": url, "method": method},
+                retryable=True,
+            )
+
+        # 429 Too Many Requests is retryable
+        if response.status_code == 429:
+            raise TransportError(
+                sku=sku,
+                stage=stage,
+                message="Rate limited (429)",
+                http_status=429,
+                payload={"url": url, "method": method},
+                retryable=True,
             )
 
         if response.status_code == 401:
@@ -102,15 +124,37 @@ class WordPressClient:
 
         return response
 
+    def _request(
+        self,
+        method: str,
+        endpoint: str,
+        sku: str = "",
+        stage: str = "request",
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Make an HTTP request with error handling and automatic retry."""
+        url = self._url(endpoint)
+
+        return self._retry.execute(
+            self._request_once,
+            method,
+            url,
+            sku,
+            stage,
+            sku=sku,
+            stage=stage,
+            **kwargs,
+        )
+
     def health_check(self) -> dict[str, Any]:
         """Validate WordPress connection and endpoints."""
         results = {
             "authentication": False,
             "rest_available": False,
             "endpoints": {
-                "produtos": False,
+                "catalog-items": False,
                 "media": False,
-                "categoria-produto": False,
+                "item-category": False,
             },
         }
 
@@ -125,9 +169,9 @@ class WordPressClient:
             return results
 
         for name, endpoint in [
-            ("produtos", self.PRODUTOS_ENDPOINT),
+            ("catalog-items", self.CATALOG_ENDPOINT),
+            ("item-category", self.TAXONOMY_ENDPOINT),
             ("media", self.MEDIA_ENDPOINT),
-            ("categoria-produto", self.TAXONOMY_ENDPOINT),
         ]:
             try:
                 response = self._request("GET", endpoint, stage="health_check")
@@ -146,13 +190,14 @@ class WordPressClient:
             params = {
                 "per_page": per_page,
                 "page": page,
-                "meta_key": "codigo_sku",
+                "status": "any",
+                "meta_key": "sku",
                 "meta_value": sku,
             }
 
             response = self._request(
                 "GET",
-                self.PRODUTOS_ENDPOINT,
+                self.CATALOG_ENDPOINT,
                 sku=sku,
                 stage="lookup",
                 params=params,
@@ -162,11 +207,12 @@ class WordPressClient:
                 params_alt = {
                     "per_page": per_page,
                     "page": page,
+                    "status": "any",
                     "search": sku,
                 }
                 response = self._request(
                     "GET",
-                    self.PRODUTOS_ENDPOINT,
+                    self.CATALOG_ENDPOINT,
                     sku=sku,
                     stage="lookup",
                     params=params_alt,
@@ -180,8 +226,8 @@ class WordPressClient:
                 return None
 
             for post in posts:
-                acf = post.get("acf", {})
-                if acf.get("codigo_sku") == sku:
+                meta = post.get("meta", {})
+                if meta.get("sku") == sku:
                     return post
 
             total_pages = int(response.headers.get("X-WP-TotalPages", 1))
@@ -198,14 +244,14 @@ class WordPressClient:
         title: str,
         slug: str | None,
         status: str,
-        acf_fields: dict[str, Any],
+        meta_fields: dict[str, Any],
         taxonomy_terms: dict[str, list[int]],
     ) -> dict[str, Any]:
         """Create a new post."""
         payload: dict[str, Any] = {
             "title": title,
             "status": status,
-            "acf": acf_fields,
+            "meta": meta_fields,
         }
 
         if slug:
@@ -216,7 +262,7 @@ class WordPressClient:
 
         response = self._request(
             "POST",
-            self.PRODUTOS_ENDPOINT,
+            self.CATALOG_ENDPOINT,
             sku=sku,
             stage="create_post",
             json=payload,
@@ -251,7 +297,7 @@ class WordPressClient:
         title: str | None = None,
         slug: str | None = None,
         status: str | None = None,
-        acf_fields: dict[str, Any] | None = None,
+        meta_fields: dict[str, Any] | None = None,
         taxonomy_terms: dict[str, list[int]] | None = None,
         featured_media: int | None = None,
     ) -> dict[str, Any]:
@@ -264,8 +310,8 @@ class WordPressClient:
             payload["slug"] = slug
         if status is not None:
             payload["status"] = status
-        if acf_fields is not None:
-            payload["acf"] = acf_fields
+        if meta_fields is not None:
+            payload["meta"] = meta_fields
         if taxonomy_terms is not None:
             for taxonomy, term_ids in taxonomy_terms.items():
                 payload[taxonomy] = term_ids
@@ -277,7 +323,7 @@ class WordPressClient:
 
         response = self._request(
             "POST",
-            f"{self.PRODUTOS_ENDPOINT}/{post_id}",
+            f"{self.CATALOG_ENDPOINT}/{post_id}",
             sku=sku,
             stage="update_post",
             json=payload,
@@ -309,7 +355,7 @@ class WordPressClient:
 
         response = self._request(
             "DELETE",
-            f"{self.PRODUTOS_ENDPOINT}/{post_id}",
+            f"{self.CATALOG_ENDPOINT}/{post_id}",
             sku=sku,
             stage="delete_post",
             params=params,

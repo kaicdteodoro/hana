@@ -52,13 +52,13 @@ setup:
 # =============================================================================
 
 health:
-	docker compose run --rm hana health -c /app/hana.yaml
+	docker compose run --rm --no-deps --entrypoint hana hana health -c /app/hana.yaml
 
 run:
-	docker compose run --rm hana run -c /app/hana.yaml
+	docker compose run --rm --no-deps --entrypoint hana hana run -c /app/hana.yaml
 
 dry-run:
-	docker compose run --rm hana run -c /app/hana.yaml --dry-run
+	docker compose run --rm --no-deps --entrypoint hana hana run -c /app/hana.yaml --dry-run
 
 shell:
 	docker compose run --rm --entrypoint /bin/bash hana
