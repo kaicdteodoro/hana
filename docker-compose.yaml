@@ -36,7 +36,7 @@ services:
     image: wordpress:6.4-php8.2-apache
     container_name: hana-wordpress
     ports:
-      - "8080:80"
+      - "4103:80"
     volumes:
       - wordpress-data:/var/www/html
       - ./docker/wordpress/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
@@ -57,6 +57,12 @@ services:
       start_period: 30s
     networks:
       - hana-network
+      - traefik-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hana.rule=Host(`hana.localhost`)"
+      - "traefik.http.services.hana.loadbalancer.server.port=80"
+      - "traefik.docker.network=traefik-proxy"
 
   # =============================================================================
   # MariaDB — Database
@@ -129,6 +135,8 @@ services:
 networks:
   hana-network:
     driver: bridge
+  traefik-proxy:
+    external: true
 
 # =============================================================================
 # Volumes
