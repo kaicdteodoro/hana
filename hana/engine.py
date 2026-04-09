@@ -26,6 +26,7 @@ from hana.config import (
     TaxonomyFailurePolicy,
     UnknownVersionPolicy,
 )
+from hana.ai_results import load_ai_content
 from hana.errors import (
     ConflictError,
     HanaError,
@@ -312,6 +313,15 @@ class IngestionEngine:
                     taxonomy_terms[taxonomy] = term_ids
 
             timings.taxonomy_ms = int((time.monotonic() - taxonomy_start) * 1000)
+
+            # Opcionalmente aplicar conteúdo de IA (se existir) antes de montar payload
+            catalog_root = Path(self._config.paths.catalog_root)
+            ai_content = load_ai_content(catalog_root, sku)
+            if ai_content:
+                if ai_content.short_description:
+                    manifest.descriptions.short = ai_content.short_description  # type: ignore[misc]
+                if ai_content.technical_description_html:
+                    manifest.descriptions.technical = ai_content.technical_description_html  # type: ignore[misc]
 
             slug = self._resolve_slug(manifest, existing_post)
             meta_fields = self._build_meta_payload(manifest)
